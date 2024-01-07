@@ -12,29 +12,53 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime as dt
 
-response = requests.get('https://www.sfchronicle.com')
-lines_split = "".join(line.strip() for line in response.text.split('\n'))
-doc = BeautifulSoup(lines_split, 'html.parser')
+VISIT_ARTICLE_STRING = 'visit|article'
+VISIT_BLOG_POST_STRING = 'visit|blogPost'
 
-headlines = doc('a', class_='hdn-analytics')
+def fetch_html(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.text
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching HTML: {e}")
+        return None
 
-formatted = []
-for headline in headlines:
-  if 'visit|article' in headline['data-hdn-analytics'] or 'visit|blogPost' in headline['data-hdn-analytics']:
-    type = headline['data-hdn-analytics'].split('|')[1].split('-')[0]
-    link = f'https://www.sfchronicle.com{headline["href"]}' if type == 'article' else headline['href']
-    section = link.split('/')[3]
-    formatted.append({
-        'headline': headline.text.strip(),
-        'type': type,
-        'section': section,
-        'link': link,
-    })
+def extract_headlines(html):
+    lines_split = "".join(line.strip() for line in html.split('\n'))
+    doc = BeautifulSoup(lines_split, 'html.parser')
 
-contents = {
-    'date_scraped': dt.now().strftime("%Y-%m-%d-%H:%M:%S"),
-    'data': formatted
-  }
+    headlines = doc('a', class_='hdn-analytics')
 
-with open('headlines/sfchron/sfchron.json', 'w') as file:
-  json.dump(contents, file)
+    formatted = []
+    for headline_element in headlines:
+        analytics_data = headline_element['data-hdn-analytics']
+        if VISIT_ARTICLE_STRING in analytics_data or VISIT_BLOG_POST_STRING in analytics_data:
+            type = analytics_data.split('|')[1].split('-')[0]
+            link = f'https://www.sfchronicle.com{headline_element["href"]}' if type == 'article' else headline_element['href']
+            section = link.split('/')[3]
+            formatted.append({
+                'headline': headline_element.text.strip(),
+                'type': type,
+                'section': section,
+                'link': link,
+            })
+
+    return formatted
+
+def save_to_json(data, filename):
+    contents = {
+        'date_scraped': dt.now().strftime("%Y-%m-%d-%H:%M:%S"),
+        'data': data
+    }
+
+    with open(filename, 'w') as file:
+        json.dump(contents, file)
+
+if __name__ == "__main__":
+    url = 'https://www.sfchronicle.com'
+    html = fetch_html(url)
+
+    if html:
+        headlines_data = extract_headlines(html)
+        save_to_json(headlines_data, 'headlines/sfchron/sfchron.json')
